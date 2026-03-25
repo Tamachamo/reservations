@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
+// ★デプロイした最新のGASのURLをセットしてください
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwSqVPtLQl7z64qg7usILckyikzmCz-YnU16Fdn150jcxNI20Skn5RPFRQj9CMM1mHw/exec'; 
 
 const generateTimeOptions = () => {
@@ -25,7 +26,27 @@ export default function App() {
   const [reserveData, setReserveData] = useState({ facility: '', date: '', startTime: '', endTime: '', email: '' });
   const [userData, setUserData] = useState({ groupName: '', applicantName: '', address: '', phone: '' });
 
-  // URL判定と初期データ取得
+  // --------------------------------------------------------
+  // 通信用の関数（エラーをキャッチして原因を特定しやすくする）
+  // --------------------------------------------------------
+  const handleGasRequest = async (payload) => {
+    try {
+      const res = await fetch(GAS_URL, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'text/plain' }, 
+        body: JSON.stringify(payload),
+        redirect: 'follow' // GAS側のリダイレクト設定に追従
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Fetch Error:', error);
+      throw error; // エラーを呼び出し元に投げる
+    }
+  };
+
+  // --------------------------------------------------------
+  // アプリ起動時の処理（ここでエラーポップアップを出します）
+  // --------------------------------------------------------
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setUrlParams({
@@ -34,9 +55,22 @@ export default function App() {
       admin: params.get('admin') === 'true'
     });
 
-    handleGasRequest({ action: 'getInitialData' }).then(res => {
-      if(res.status === 'success') setFacilities(res.facilities);
-    });
+    // 施設一覧データの取得
+    handleGasRequest({ action: 'getInitialData' })
+      .then(res => {
+        if (res.status === 'success') {
+          if (!res.facilities || res.facilities.length === 0) {
+            alert('【確認事項】通信は成功しましたが、施設データが空です。\nスプレッドシートに「Facilities」という名前のシートがあり、A列に施設名が入力されているか確認してください。');
+          } else {
+            setFacilities(res.facilities);
+          }
+        } else {
+          alert('【GASからのエラー】\n' + res.message);
+        }
+      })
+      .catch(err => {
+        alert('【致命的な通信エラー】\n' + err.message + '\n\nGASのURLが間違っているか、デプロイ設定で「アクセスできるユーザー：全員」になっていない可能性があります。');
+      });
   }, []);
 
   // 施設や月が変わったらカレンダー用データを取得
@@ -44,21 +78,22 @@ export default function App() {
     if (reserveData.facility) {
       const yearMonth = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
       handleGasRequest({ action: 'getReservations', facility: reserveData.facility, monthPrefix: yearMonth })
-        .then(res => { if(res.status === 'success') setReservations(res.reservations); });
+        .then(res => { if(res.status === 'success') setReservations(res.reservations); })
+        .catch(err => console.error(err));
     }
   }, [reserveData.facility, currentMonth]);
-
-  const handleGasRequest = async (payload) => {
-    const res = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
-    return res.json();
-  };
 
   // アクション処理（本予約確定、キャンセル）
   const handleUrlAction = async (action, token) => {
     setLoading(true);
-    const data = await handleGasRequest({ action, token, frontendUrl: window.location.href.split('?')[0] });
-    alert(data.status === 'success' ? `手続きが完了しました。` : `エラー: ${data.message}`);
-    window.location.href = window.location.pathname;
+    try {
+      const data = await handleGasRequest({ action, token, frontendUrl: window.location.href.split('?')[0] });
+      alert(data.status === 'success' ? `手続きが完了しました。` : `エラー: ${data.message}`);
+      window.location.href = window.location.pathname;
+    } catch (err) {
+      alert('通信エラーが発生しました。');
+      setLoading(false);
+    }
   };
 
   // 予約（仮）または保守ブロック送信
@@ -70,12 +105,16 @@ export default function App() {
       ...reserveData, ...userData,
       frontendUrl: window.location.href.split('?')[0]
     };
-    const data = await handleGasRequest(payload);
-    if (data.status === 'success') {
-      alert(urlParams.admin ? '保守枠をブロックしました。' : '仮予約を受け付けました。\nご入力いただいたメールアドレスに「本予約用URL」を送信しましたので、クリックして完了させてください。');
-      window.location.reload();
-    } else {
-      alert(`エラー: ${data.message}`);
+    try {
+      const data = await handleGasRequest(payload);
+      if (data.status === 'success') {
+        alert(urlParams.admin ? '保守枠をブロックしました。' : '仮予約を受け付けました。\nご入力いただいたメールアドレスに「本予約用URL」を送信しましたので、クリックして完了させてください。');
+        window.location.reload();
+      } else {
+        alert(`エラー: ${data.message}`);
+      }
+    } catch (err) {
+      alert('通信に失敗しました。時間をおいて再度お試しください。');
     }
     setLoading(false);
   };
@@ -93,7 +132,6 @@ export default function App() {
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dayReservations = reservations.filter(r => r.date === dateStr);
-      // 簡易判定：予約が10件以上なら×、5件以上なら△、それ以外は〇
       let statusIcon = '〇'; let statusColor = 'text-blue-500';
       if (dayReservations.length >= 10) { statusIcon = '×'; statusColor = 'text-red-500'; }
       else if (dayReservations.length >= 5) { statusIcon = '△'; statusColor = 'text-yellow-500'; }
