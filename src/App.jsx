@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 // ★GASのURL
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyzeiRzYZ7E2aCnCWQnPo7PGHHZZqTY0H23QlrW9HScxxpz5Hn00QEi0g0J56jx8gkG/exec'; 
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxJuqxxS3iM73TRHDcqbYFMmLO7-Kje95Ylt_x-AdRzQrEHo-3Kb6UdG31Ja5YCTcGN/exec'; 
 
 const timeOptions = (() => {
   const options = [];
