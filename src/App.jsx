@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
-// ★GASのURL
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxJuqxxS3iM73TRHDcqbYFMmLO7-Kje95Ylt_x-AdRzQrEHo-3Kb6UdG31Ja5YCTcGN/exec'; 
+// ★GASのURLをセットしてください
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyfoHNtc7s6_AoRW0q6OvwqJohuJJjVelM3es_PsDwdJnbFZDMBRde-hKtQXgEmQQqp/exec'; 
 
 const timeOptions = (() => {
   const options = [];
@@ -15,7 +15,7 @@ const timeOptions = (() => {
 })();
 
 export default function App() {
-  const [urlParams, setUrlParams] = useState({ confirm: null, cancel: null, reset: null, admin: false });
+  const [urlParams, setUrlParams] = useState({ confirm: null, cancel: null, reset: null, register: null, admin: false });
   const [facilities, setFacilities] = useState([]);
   const [step, setStep] = useState(1);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -24,17 +24,16 @@ export default function App() {
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState("システムを準備中...");
   
-  // 認証関連
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginMode, setLoginMode] = useState('login'); // 'login' | 'register' | 'forgot'
+  const [loginMode, setLoginMode] = useState('login'); 
   const [loggedInUser, setLoggedInUser] = useState(null);
-  const [authForm, setAuthForm] = useState({ email: '', password: '', groupName: '', applicantName: '', address: '', phone: '' });
   
-  // ビュー管理
-  const [viewMode, setViewMode] = useState('home'); // 'home' | 'mypage' | 'adminDash'
+  // ★passwordConfirmを追加
+  const [authForm, setAuthForm] = useState({ email: '', password: '', passwordConfirm: '', groupName: '', applicantName: '', address: '', phone: '' });
+  
+  const [viewMode, setViewMode] = useState('home'); 
   const [myReservations, setMyReservations] = useState([]);
   
-  // 管理者用ダッシュボード関連
   const [adminDate, setAdminDate] = useState(new Date().toISOString().split('T')[0]);
   const [adminData, setAdminData] = useState([]);
 
@@ -51,15 +50,14 @@ export default function App() {
     const confirmToken = params.get('confirm');
     const cancelToken = params.get('cancel');
     const resetToken = params.get('reset');
+    const registerToken = params.get('register');
     const isAdmin = params.get('admin') === 'true';
-    setUrlParams({ confirm: confirmToken, cancel: cancelToken, reset: resetToken, admin: isAdmin });
+    setUrlParams({ confirm: confirmToken, cancel: cancelToken, reset: resetToken, register: registerToken, admin: isAdmin });
 
     const storedUser = localStorage.getItem('sports_app_user');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      setLoggedInUser(parsedUser);
-      setUserData(parsedUser);
-      setReserveData(prev => ({ ...prev, email: parsedUser.email }));
+      setLoggedInUser(parsedUser); setUserData(parsedUser); setReserveData(prev => ({ ...prev, email: parsedUser.email }));
     }
 
     if (confirmToken || cancelToken) {
@@ -70,7 +68,7 @@ export default function App() {
       return;
     }
 
-    if (resetToken) { setIsAppLoading(false); return; } // リセット画面はローディング解除して描画
+    if (resetToken || registerToken) { setIsAppLoading(false); return; }
 
     if (isAdmin) setViewMode('adminDash');
 
@@ -87,7 +85,6 @@ export default function App() {
     }
   }, [reserveData.facility, currentMonth, viewMode]);
 
-  // ★管理者ダッシュボードのデータ取得
   useEffect(() => {
     if (viewMode === 'adminDash' && adminDate) {
       setIsAppLoading(true); setLoadingMsg("予約状況を取得中...");
@@ -100,7 +97,14 @@ export default function App() {
     e.preventDefault();
     setIsAppLoading(true);
     
-    // ★①パスワードリセット要求処理
+    // ★追加：会員登録URLの発行処理
+    if (loginMode === 'register') {
+      setLoadingMsg("登録用メールを送信中...");
+      const data = await handleGasRequest({ action: 'requestRegistration', email: authForm.email, frontendUrl: window.location.href.split('?')[0] });
+      alert(data.status === 'success' ? 'メールを送信しました。記載されたURLから本登録を完了させてください。' : data.message);
+      setIsAppLoading(false); setShowLoginModal(false); return;
+    }
+
     if (loginMode === 'forgot') {
       setLoadingMsg("再設定メールを送信中...");
       const data = await handleGasRequest({ action: 'requestPasswordReset', email: authForm.email, frontendUrl: window.location.href.split('?')[0] });
@@ -108,21 +112,33 @@ export default function App() {
       setIsAppLoading(false); setShowLoginModal(false); return;
     }
 
-    setLoadingMsg(loginMode === 'login' ? "ログイン中..." : "会員登録中...");
-    const payload = { action: loginMode === 'login' ? 'login' : 'registerUser', ...authForm };
+    setLoadingMsg("ログイン中...");
     try {
-      const data = await handleGasRequest(payload);
+      const data = await handleGasRequest({ action: 'login', email: authForm.email, password: authForm.password });
       if (data.status === 'success') {
-        if (loginMode === 'login') {
-          setLoggedInUser(data.userData); setUserData(data.userData); setReserveData({ ...reserveData, email: data.userData.email });
-          localStorage.setItem('sports_app_user', JSON.stringify(data.userData));
-          setShowLoginModal(false); alert('ログインしました！');
-        } else {
-          alert('登録が完了しました。続けてログインしてください。'); setLoginMode('login');
-        }
+        setLoggedInUser(data.userData); setUserData(data.userData); setReserveData({ ...reserveData, email: data.userData.email });
+        localStorage.setItem('sports_app_user', JSON.stringify(data.userData));
+        setShowLoginModal(false); alert('ログインしました！');
       } else { alert(data.message); }
     } catch (err) { alert('通信エラーが発生しました。'); }
     setIsAppLoading(false);
+  };
+
+  // ★追加：本登録の実行処理
+  const executeRegistration = async (e) => {
+    e.preventDefault();
+    if (authForm.password.length < 6) return alert("パスワードは6文字以上で入力してください。");
+    if (authForm.password !== authForm.passwordConfirm) return alert("入力されたパスワードが一致しません。");
+    
+    setIsAppLoading(true); setLoadingMsg("登録処理中...");
+    const data = await handleGasRequest({ action: 'registerUser', token: urlParams.register, ...authForm });
+    if (data.status === 'success') {
+      alert('会員登録が完了しました！ログインしてください。');
+      window.location.href = window.location.pathname;
+    } else {
+      alert(`エラー: ${data.message}`);
+      setIsAppLoading(false);
+    }
   };
 
   const submitAction = async (e) => {
@@ -155,7 +171,33 @@ export default function App() {
     </div>
   );
 
-  // ★①パスワード再設定画面
+  // 本登録画面
+  if (urlParams.register) return (
+    <div className="min-h-screen bg-gray-50 py-10 px-4 flex justify-center items-center">
+      <form onSubmit={executeRegistration} className="bg-white p-6 rounded-xl shadow-md w-full max-w-md space-y-4">
+        <h2 className="text-xl font-bold mb-4 border-b pb-2">会員情報の入力</h2>
+        
+        <div>
+          <label className="text-sm font-bold text-gray-700">パスワード (6文字以上)</label>
+          <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />
+        </div>
+        <div>
+          <label className="text-sm font-bold text-gray-700">パスワード (確認用)</label>
+          <input required type="password" placeholder="もう一度入力" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, passwordConfirm: e.target.value})} />
+        </div>
+        
+        <div className="pt-4 space-y-3 border-t">
+          <input required type="text" placeholder="団体名（個人の場合は個人）" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, groupName: e.target.value})} />
+          <input required type="text" placeholder="代表者名" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, applicantName: e.target.value})} />
+          <input required type="text" placeholder="住所" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, address: e.target.value})} />
+          <input required type="text" placeholder="電話番号" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, phone: e.target.value})} />
+        </div>
+        
+        <button type="submit" className="w-full mt-6 py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700">登録を完了する</button>
+      </form>
+    </div>
+  );
+
   if (urlParams.reset) return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 flex justify-center items-center">
       <form onSubmit={executePasswordReset} className="bg-white p-6 rounded-xl shadow-md w-full max-w-sm">
@@ -166,7 +208,6 @@ export default function App() {
     </div>
   );
 
-  // ★②管理者ダッシュボード画面
   if (viewMode === 'adminDash') return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
@@ -174,9 +215,7 @@ export default function App() {
           <h1 className="text-xl font-bold text-red-600">【管理者】予約状況ダッシュボード</h1>
           <button onClick={() => setViewMode('home')} className="px-4 py-2 bg-gray-200 rounded text-sm">保守枠設定画面へ</button>
         </div>
-        
         <input type="date" value={adminDate} onChange={e => setAdminDate(e.target.value)} className="p-3 border rounded font-bold mb-6 text-lg" />
-        
         <div className="space-y-4">
           {adminData.length === 0 ? <p className="text-gray-500">この日の予約・保守枠はありません。</p> : 
             adminData.map((r, i) => (
@@ -187,8 +226,7 @@ export default function App() {
                 </div>
                 {r.status !== '保守' && (
                   <div className="text-sm text-gray-700 grid grid-cols-2 gap-2 mt-2">
-                    <p>団体: {r.groupName}</p><p>代表者: {r.applicantName}</p>
-                    <p>電話: {r.phone}</p><p>Email: {r.email}</p>
+                    <p>団体: {r.groupName}</p><p>代表者: {r.applicantName}</p><p>電話: {r.phone}</p><p>Email: {r.email}</p>
                   </div>
                 )}
               </div>
@@ -199,8 +237,6 @@ export default function App() {
     </div>
   );
 
-  // （マイページ・通常予約画面は文字数制限のため前回とほぼ同じ構成です。以下略記せずフル記述します）
-  // ====== 以下、通常・マイページ画面 ======
   if (viewMode === 'mypage') return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6">
@@ -273,15 +309,15 @@ export default function App() {
               <h2 className="text-xl font-bold mb-4">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '新規会員登録' : 'パスワードの再設定'}</h2>
               <form onSubmit={handleAuth} className="space-y-3">
                 <input required type="email" placeholder="メールアドレス" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, email: e.target.value})} />
-                {loginMode !== 'forgot' && <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />}
-                {loginMode === 'register' && (
-                  <><input required type="text" placeholder="団体名（個人の場合は個人）" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, groupName: e.target.value})} /><input required type="text" placeholder="代表者名" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, applicantName: e.target.value})} /><input required type="text" placeholder="住所" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, address: e.target.value})} /><input required type="text" placeholder="電話番号" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, phone: e.target.value})} /></>
-                )}
-                <button type="submit" className="w-full py-2 bg-blue-600 text-white font-bold rounded mt-2">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '登録してログイン' : '再設定メールを送信'}</button>
+                
+                {/* ログインの時だけパスワード入力を表示 */}
+                {loginMode === 'login' && <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />}
+                
+                <button type="submit" className="w-full py-2 bg-blue-600 text-white font-bold rounded mt-2">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '登録用URLを送信' : '再設定メールを送信'}</button>
               </form>
               <div className="mt-4 text-center flex flex-col space-y-2">
                 {loginMode === 'login' ? (
-                  <><button onClick={() => setLoginMode('register')} className="text-sm text-blue-600 underline">新規登録はこちら</button><button onClick={() => setLoginMode('forgot')} className="text-sm text-gray-500 underline">パスワードを忘れた方</button></>
+                  <><button onClick={() => setLoginMode('register')} className="text-sm text-blue-600 underline">新規登録はこちら（メール認証）</button><button onClick={() => setLoginMode('forgot')} className="text-sm text-gray-500 underline">パスワードを忘れた方</button></>
                 ) : (<button onClick={() => setLoginMode('login')} className="text-sm text-blue-600 underline">ログイン画面に戻る</button>)}
               </div>
               <button onClick={() => setShowLoginModal(false)} className="w-full mt-4 py-2 border rounded text-gray-600">閉じる</button>
