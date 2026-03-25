@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbz6FRZHbAtoLVSNCuj5Ai1IbszKEygsi6YO0li6QoahUh2-dS77vFrwfzV-kdUVR9bv/exec'; 
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwSqVPtLQl7z64qg7usILckyikzmCz-YnU16Fdn150jcxNI20Skn5RPFRQj9CMM1mHw/exec'; 
 
 const generateTimeOptions = () => {
   const options = [];
