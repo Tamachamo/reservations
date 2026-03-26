@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
 // ★GASのURLをセットしてください
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwqzwZr1YyWZO9M3dlqHT8gibcQZaTA0qd0cCXObIZ3geJjvyXXeRePSolLs3LNZJv1/exec'; 
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKcG6_HuXUZ7Puzx0WltlCZVn1747ruKC-YVIKztvSLnBzr39SCkhoxnmJkF6c8eTa/exec'; 
 
-// 時間生成（確実に「08:30」のような2桁フォーマットにする）
 const timeOptions = (() => {
   const options = [];
   let current = new Date(); current.setHours(8, 30, 0, 0);
@@ -17,8 +16,12 @@ const timeOptions = (() => {
   return options;
 })();
 
+// ★現在の日付文字列を取得（YYYY-MM-DD形式）
+const today = new Date();
+const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
 export default function App() {
-  const [urlParams, setUrlParams] = useState({ confirm: null, cancel: null, reset: null, register: null, admin: false });
+  const [urlParams, setUrlParams] = useState({ cancel: null, reset: null, register: null, admin: false });
   const [facilities, setFacilities] = useState([]);
   const [step, setStep] = useState(1);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -34,7 +37,7 @@ export default function App() {
   
   const [viewMode, setViewMode] = useState('home'); 
   const [myReservations, setMyReservations] = useState([]);
-  const [adminDate, setAdminDate] = useState(new Date().toISOString().split('T')[0]);
+  const [adminDate, setAdminDate] = useState(todayStr);
   const [adminData, setAdminData] = useState([]);
 
   const [reserveData, setReserveData] = useState({ facility: '', date: '', startTime: '', endTime: '', email: '' });
@@ -47,10 +50,11 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const confirmToken = params.get('confirm'); const cancelToken = params.get('cancel');
-    const resetToken = params.get('reset'); const registerToken = params.get('register');
+    const cancelToken = params.get('cancel');
+    const resetToken = params.get('reset'); 
+    const registerToken = params.get('register');
     const isAdmin = params.get('admin') === 'true';
-    setUrlParams({ confirm: confirmToken, cancel: cancelToken, reset: resetToken, register: registerToken, admin: isAdmin });
+    setUrlParams({ cancel: cancelToken, reset: resetToken, register: registerToken, admin: isAdmin });
 
     const storedUser = localStorage.getItem('sports_app_user');
     if (storedUser) {
@@ -58,9 +62,9 @@ export default function App() {
       setLoggedInUser(parsedUser); setUserData(parsedUser); setReserveData(prev => ({ ...prev, email: parsedUser.email }));
     }
 
-    if (confirmToken || cancelToken) {
+    if (cancelToken) {
       setIsAppLoading(true); setLoadingMsg("手続きを処理しています...");
-      handleGasRequest({ action: confirmToken ? 'confirm' : 'cancel', token: confirmToken || cancelToken, frontendUrl: window.location.href.split('?')[0] })
+      handleGasRequest({ action: 'cancel', token: cancelToken, frontendUrl: window.location.href.split('?')[0] })
         .then(data => { alert(data.status === 'success' ? `手続きが完了しました！` : `エラー: ${data.message}`); window.location.href = window.location.pathname; })
         .catch(() => { alert('通信エラーが発生しました。'); window.location.href = window.location.pathname; });
       return;
@@ -120,7 +124,6 @@ export default function App() {
     setIsAppLoading(false);
   };
 
-  // ★修正：登録完了時の自動ログイン
   const executeRegistration = async (e) => {
     e.preventDefault();
     if (authForm.password.length < 6) return alert("パスワードは6文字以上で入力してください。");
@@ -130,19 +133,10 @@ export default function App() {
     const data = await handleGasRequest({ action: 'registerUser', token: urlParams.register, ...authForm });
     if (data.status === 'success') {
       alert('会員登録が完了しました！自動ログインします。');
-      
-      // 自動ログイン設定
-      setLoggedInUser(data.userData);
-      setUserData(data.userData);
-      setReserveData(prev => ({ ...prev, email: data.userData.email }));
+      setLoggedInUser(data.userData); setUserData(data.userData); setReserveData(prev => ({ ...prev, email: data.userData.email }));
       localStorage.setItem('sports_app_user', JSON.stringify(data.userData));
-      
-      // トップページへリダイレクト
       window.location.href = window.location.pathname;
-    } else {
-      alert(`エラー: ${data.message}`);
-      setIsAppLoading(false);
-    }
+    } else { alert(`エラー: ${data.message}`); setIsAppLoading(false); }
   };
 
   const submitAction = async (e) => {
@@ -152,7 +146,8 @@ export default function App() {
     try {
       const data = await handleGasRequest({ action: urlParams.admin ? 'adminBlock' : 'reserve', ...reserveData, ...userData, frontendUrl: window.location.href.split('?')[0] });
       if (data.status === 'success') {
-        alert(urlParams.admin ? '保守枠をブロックしました。' : '仮予約を受け付けました。\n確認メール内のURLから本予約を確定させてください。');
+        // ★ 即・本予約に変わったのでアラート文言を変更
+        alert(urlParams.admin ? '保守枠をブロックしました。' : '予約が完了しました！\n確認メールを送信しました。');
         window.location.reload();
       } else { alert(`エラー: ${data.message}`); }
     } catch (err) { alert('通信に失敗しました。'); }
@@ -203,11 +198,11 @@ export default function App() {
   );
 
   if (viewMode === 'adminDash') return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
-      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-between py-10 px-4">
+      <div className="max-w-4xl mx-auto w-full bg-white rounded-xl shadow-md p-6">
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <h1 className="text-xl font-bold text-red-600">【管理者】予約状況ダッシュボード</h1>
-          <button onClick={() => setViewMode('home')} className="px-4 py-2 bg-gray-200 rounded text-sm">保守枠設定画面へ</button>
+          <button onClick={() => { setViewMode('home'); window.location.href = window.location.pathname; }} className="px-4 py-2 bg-gray-200 rounded text-sm">予約画面へ戻る</button>
         </div>
         <input type="date" value={adminDate} onChange={e => setAdminDate(e.target.value)} className="p-3 border rounded font-bold mb-6 text-lg" />
         <div className="space-y-4">
@@ -224,21 +219,24 @@ export default function App() {
     </div>
   );
 
+  // マイページでの「過去予約の非表示」
+  const futureReservations = myReservations.filter(r => r.date >= todayStr);
+
   if (viewMode === 'mypage') return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
-      <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-between py-10 px-4">
+      <div className="max-w-2xl mx-auto w-full bg-white rounded-xl shadow-md p-6 mb-8">
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <h1 className="text-xl font-bold">マイページ</h1>
           <button onClick={() => setViewMode('home')} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">予約画面へ戻る</button>
         </div>
-        <h2 className="font-bold text-lg mb-4 text-blue-700">📋 あなたの予約一覧</h2>
+        <h2 className="font-bold text-lg mb-4 text-blue-700">📋 これからの予約一覧</h2>
         <div className="mb-8 space-y-3 max-h-80 overflow-y-auto">
-          {myReservations.length === 0 ? <p className="text-gray-500">予約履歴はありません。</p> : 
-            myReservations.map((r, i) => (
+          {futureReservations.length === 0 ? <p className="text-gray-500">予定されている予約はありません。</p> : 
+            futureReservations.map((r, i) => (
               <div key={i} className={`p-4 rounded border ${r.status === 'キャンセル' ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 border-blue-200'}`}>
                 <div className="flex justify-between"><span className="font-bold">{r.facility}</span><span className="text-sm font-bold px-2 py-1 rounded bg-white border">{r.status}</span></div>
                 <p className="text-sm mt-2">{r.date} {r.start} 〜 {r.end}</p>
-                {['予約','仮予約'].includes(r.status) && (<button onClick={() => window.open(`?cancel=${r.token}`, '_blank')} className="mt-2 text-xs text-red-600 underline">キャンセルする</button>)}
+                {r.status === '予約' && (<button onClick={() => window.open(`?cancel=${r.token}`, '_blank')} className="mt-2 text-xs text-red-600 underline">キャンセルする</button>)}
               </div>
             ))
           }
@@ -259,10 +257,14 @@ export default function App() {
         </form>
         <div className="mt-8 pt-4 border-t text-right"><button onClick={()=>{localStorage.removeItem('sports_app_user'); setLoggedInUser(null); setViewMode('home');}} className="text-sm text-gray-500 underline">ログアウト</button></div>
       </div>
+      
+      {/* フッターリンク（管理者用） */}
+      <div className="text-center pb-4">
+        <a href="?admin=true" className="text-xs text-gray-400 underline hover:text-gray-600">【テスト用】管理者画面へ</a>
+      </div>
     </div>
   );
 
-  // ★修正：朝・昼・夜の空き状況がわかるカレンダーUI
   const renderCalendar = () => {
     const year = currentMonth.getFullYear(); const month = currentMonth.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate(); const firstDay = new Date(year, month, 1).getDay(); const days = [];
@@ -270,12 +272,14 @@ export default function App() {
     
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const dayReservations = reservations.filter(r => r.date === dateStr);
       
+      // ★ 過去日の判定
+      const isPast = dateStr < todayStr;
+      
+      const dayReservations = reservations.filter(r => r.date === dateStr);
       const slots = timeOptions.slice(0, -1);
       let mFree = 0, aFree = 0, nFree = 0;
       
-      // 朝(8:30~12:00), 昼(12:00~18:00), 夜(18:00~22:00) の空き枠を計算
       slots.forEach(slot => {
         const isBooked = dayReservations.some(r => r.start <= slot && slot < r.end);
         if (!isBooked) {
@@ -284,28 +288,41 @@ export default function App() {
           else nFree++;
         }
       });
-      const total = mFree + aFree + nFree;
+
+      let mStatus = '〇', mColor = 'text-blue-600';
+      if (mFree <= 4) { mStatus = '×'; mColor = 'text-red-500'; }
+      else if (mFree < 7) { mStatus = '△'; mColor = 'text-orange-500'; }
+
+      let aStatus = '〇', aColor = 'text-blue-600';
+      if (aFree <= 1) { aStatus = '×'; aColor = 'text-red-500'; }
+      else if (aFree < 12) { aStatus = '△'; aColor = 'text-orange-500'; }
+
+      let nStatus = '〇', nColor = 'text-blue-600';
+      if (nFree <= 4) { nStatus = '×'; nColor = 'text-red-500'; }
+      else if (nFree < 8) { nStatus = '△'; nColor = 'text-orange-500'; }
 
       let statusDisplay;
-      if (total === 0) {
-        statusDisplay = <span className="text-red-500 font-bold text-sm mt-3">満</span>;
-      } else if (total === slots.length) {
-        statusDisplay = <span className="text-blue-500 font-bold text-sm mt-3">〇 空き</span>;
+      if (mStatus === '×' && aStatus === '×' && nStatus === '×') {
+        statusDisplay = <span className={`font-bold text-sm mt-3 ${isPast ? 'text-gray-400' : 'text-red-500'}`}>満</span>;
+      } else if (mStatus === '〇' && aStatus === '〇' && nStatus === '〇') {
+        statusDisplay = <span className={`font-bold text-sm mt-3 ${isPast ? 'text-gray-400' : 'text-blue-500'}`}>〇 空き</span>;
       } else {
-        // スマホでも崩れないように3行のバッジで表示
         statusDisplay = (
           <div className="flex flex-col items-center mt-1 space-y-0.5 text-[10px] font-bold">
-            <span className={mFree > 0 ? "text-blue-600" : "text-gray-400"}>朝 {mFree>0?'〇':'×'}</span>
-            <span className={aFree > 0 ? "text-blue-600" : "text-gray-400"}>昼 {aFree>0?'〇':'×'}</span>
-            <span className={nFree > 0 ? "text-blue-600" : "text-gray-400"}>夜 {nFree>0?'〇':'×'}</span>
+            <span className={isPast ? 'text-gray-400' : mColor}>朝 {mStatus}</span>
+            <span className={isPast ? 'text-gray-400' : aColor}>昼 {aStatus}</span>
+            <span className={isPast ? 'text-gray-400' : nColor}>夜 {nStatus}</span>
           </div>
         );
       }
 
+      // ★ 過去日はグレーアウトし、クリックを無効化する
       days.push(
-        <button key={day} onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} 
-                className="p-1 border rounded hover:bg-blue-50 flex flex-col items-center h-20 justify-start bg-white shadow-sm transition-colors">
-          <span className="font-bold text-sm text-gray-700">{day}</span>
+        <button key={day} 
+                disabled={isPast}
+                onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} 
+                className={`p-1 border rounded flex flex-col items-center h-20 justify-start shadow-sm transition-colors ${isPast ? 'bg-gray-100 cursor-not-allowed' : 'bg-white hover:bg-blue-50'}`}>
+          <span className={`font-bold text-sm ${isPast ? 'text-gray-400' : 'text-gray-700'}`}>{day}</span>
           {statusDisplay}
         </button>
       );
@@ -316,8 +333,8 @@ export default function App() {
   const selectedDayReservations = reservations.filter(r => r.date === reserveData.date);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4 relative">
-      <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-between py-10 px-4 relative">
+      <div className="max-w-2xl mx-auto w-full bg-white rounded-xl shadow-md p-6 mb-8">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
           <h1 className="text-xl font-bold">{urlParams.admin ? '【管理者】保守枠設定' : '施設オンライン予約'}</h1>
           {!urlParams.admin && (
@@ -334,7 +351,6 @@ export default function App() {
               <form onSubmit={handleAuth} className="space-y-3">
                 <input required type="email" placeholder="メールアドレス" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, email: e.target.value})} />
                 {loginMode === 'login' && <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />}
-                
                 <button type="submit" className="w-full py-2 bg-blue-600 text-white font-bold rounded mt-2">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '登録用URLを送信' : '再設定メールを送信'}</button>
               </form>
               <div className="mt-4 text-center flex flex-col space-y-2">
@@ -378,9 +394,14 @@ export default function App() {
                 <input required type="text" placeholder="電話番号" value={userData.phone} className="w-full p-2 border rounded bg-gray-50" onChange={e => setUserData({...userData, phone: e.target.value})} disabled={loggedInUser} />
               </div>
             )}
-            <div className="flex justify-between mt-8"><button type="button" onClick={() => setStep(1)} className="px-6 py-2 border rounded hover:bg-gray-100">戻る</button><button type="submit" className={`px-6 py-2 text-white font-bold rounded ${urlParams.admin?'bg-red-600':'bg-blue-600'}`}>{urlParams.admin ? '保守枠をブロック' : '仮予約を申し込む'}</button></div>
+            <div className="flex justify-between mt-8"><button type="button" onClick={() => setStep(1)} className="px-6 py-2 border rounded hover:bg-gray-100">戻る</button><button type="submit" className={`px-6 py-2 text-white font-bold rounded ${urlParams.admin?'bg-red-600':'bg-blue-600'}`}>{urlParams.admin ? '保守枠をブロック' : '予約を確定する'}</button></div>
           </form>
         )}
+      </div>
+      
+      {/* フッターリンク（管理者用） */}
+      <div className="text-center pb-4">
+        <a href="?admin=true" className="text-xs text-gray-400 underline hover:text-gray-600">【テスト用】管理者画面へ</a>
       </div>
     </div>
   );
