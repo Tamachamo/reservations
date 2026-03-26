@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 
 // ★GASのURLをセットしてください
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyfoHNtc7s6_AoRW0q6OvwqJohuJJjVelM3es_PsDwdJnbFZDMBRde-hKtQXgEmQQqp/exec'; 
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwqzwZr1YyWZO9M3dlqHT8gibcQZaTA0qd0cCXObIZ3geJjvyXXeRePSolLs3LNZJv1/exec'; 
 
+// 時間生成（確実に「08:30」のような2桁フォーマットにする）
 const timeOptions = (() => {
   const options = [];
   let current = new Date(); current.setHours(8, 30, 0, 0);
   const end = new Date(); end.setHours(22, 0, 0, 0);
   while (current <= end) {
-    options.push(current.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    const h = String(current.getHours()).padStart(2, '0');
+    const m = String(current.getMinutes()).padStart(2, '0');
+    options.push(`${h}:${m}`);
     current.setMinutes(current.getMinutes() + 30);
   }
   return options;
@@ -27,13 +30,10 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginMode, setLoginMode] = useState('login'); 
   const [loggedInUser, setLoggedInUser] = useState(null);
-  
-  // ★passwordConfirmを追加
   const [authForm, setAuthForm] = useState({ email: '', password: '', passwordConfirm: '', groupName: '', applicantName: '', address: '', phone: '' });
   
   const [viewMode, setViewMode] = useState('home'); 
   const [myReservations, setMyReservations] = useState([]);
-  
   const [adminDate, setAdminDate] = useState(new Date().toISOString().split('T')[0]);
   const [adminData, setAdminData] = useState([]);
 
@@ -47,10 +47,8 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const confirmToken = params.get('confirm');
-    const cancelToken = params.get('cancel');
-    const resetToken = params.get('reset');
-    const registerToken = params.get('register');
+    const confirmToken = params.get('confirm'); const cancelToken = params.get('cancel');
+    const resetToken = params.get('reset'); const registerToken = params.get('register');
     const isAdmin = params.get('admin') === 'true';
     setUrlParams({ confirm: confirmToken, cancel: cancelToken, reset: resetToken, register: registerToken, admin: isAdmin });
 
@@ -63,13 +61,12 @@ export default function App() {
     if (confirmToken || cancelToken) {
       setIsAppLoading(true); setLoadingMsg("手続きを処理しています...");
       handleGasRequest({ action: confirmToken ? 'confirm' : 'cancel', token: confirmToken || cancelToken, frontendUrl: window.location.href.split('?')[0] })
-        .then(data => { alert(data.status === 'success' ? `手続きが正常に完了しました！` : `エラー: ${data.message}`); window.location.href = window.location.pathname; })
+        .then(data => { alert(data.status === 'success' ? `手続きが完了しました！` : `エラー: ${data.message}`); window.location.href = window.location.pathname; })
         .catch(() => { alert('通信エラーが発生しました。'); window.location.href = window.location.pathname; });
       return;
     }
 
     if (resetToken || registerToken) { setIsAppLoading(false); return; }
-
     if (isAdmin) setViewMode('adminDash');
 
     setIsAppLoading(true); setLoadingMsg("データを読み込んでいます...");
@@ -97,7 +94,6 @@ export default function App() {
     e.preventDefault();
     setIsAppLoading(true);
     
-    // ★追加：会員登録URLの発行処理
     if (loginMode === 'register') {
       setLoadingMsg("登録用メールを送信中...");
       const data = await handleGasRequest({ action: 'requestRegistration', email: authForm.email, frontendUrl: window.location.href.split('?')[0] });
@@ -124,7 +120,7 @@ export default function App() {
     setIsAppLoading(false);
   };
 
-  // ★追加：本登録の実行処理
+  // ★修正：登録完了時の自動ログイン
   const executeRegistration = async (e) => {
     e.preventDefault();
     if (authForm.password.length < 6) return alert("パスワードは6文字以上で入力してください。");
@@ -133,7 +129,15 @@ export default function App() {
     setIsAppLoading(true); setLoadingMsg("登録処理中...");
     const data = await handleGasRequest({ action: 'registerUser', token: urlParams.register, ...authForm });
     if (data.status === 'success') {
-      alert('会員登録が完了しました！ログインしてください。');
+      alert('会員登録が完了しました！自動ログインします。');
+      
+      // 自動ログイン設定
+      setLoggedInUser(data.userData);
+      setUserData(data.userData);
+      setReserveData(prev => ({ ...prev, email: data.userData.email }));
+      localStorage.setItem('sports_app_user', JSON.stringify(data.userData));
+      
+      // トップページへリダイレクト
       window.location.href = window.location.pathname;
     } else {
       alert(`エラー: ${data.message}`);
@@ -171,28 +175,18 @@ export default function App() {
     </div>
   );
 
-  // 本登録画面
   if (urlParams.register) return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 flex justify-center items-center">
       <form onSubmit={executeRegistration} className="bg-white p-6 rounded-xl shadow-md w-full max-w-md space-y-4">
         <h2 className="text-xl font-bold mb-4 border-b pb-2">会員情報の入力</h2>
-        
-        <div>
-          <label className="text-sm font-bold text-gray-700">パスワード (6文字以上)</label>
-          <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />
-        </div>
-        <div>
-          <label className="text-sm font-bold text-gray-700">パスワード (確認用)</label>
-          <input required type="password" placeholder="もう一度入力" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, passwordConfirm: e.target.value})} />
-        </div>
-        
+        <div><label className="text-sm font-bold text-gray-700">パスワード (6文字以上)</label><input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} /></div>
+        <div><label className="text-sm font-bold text-gray-700">パスワード (確認用)</label><input required type="password" placeholder="もう一度入力" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, passwordConfirm: e.target.value})} /></div>
         <div className="pt-4 space-y-3 border-t">
           <input required type="text" placeholder="団体名（個人の場合は個人）" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, groupName: e.target.value})} />
           <input required type="text" placeholder="代表者名" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, applicantName: e.target.value})} />
           <input required type="text" placeholder="住所" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, address: e.target.value})} />
           <input required type="text" placeholder="電話番号" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, phone: e.target.value})} />
         </div>
-        
         <button type="submit" className="w-full mt-6 py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700">登録を完了する</button>
       </form>
     </div>
@@ -220,15 +214,8 @@ export default function App() {
           {adminData.length === 0 ? <p className="text-gray-500">この日の予約・保守枠はありません。</p> : 
             adminData.map((r, i) => (
               <div key={i} className={`p-4 border rounded ${r.status === '予約' ? 'bg-blue-50 border-blue-200' : r.status === '保守' ? 'bg-red-50 border-red-200' : 'bg-gray-100'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-lg">{r.facility} <span className="text-gray-600 ml-2">({r.start} 〜 {r.end})</span></span>
-                  <span className={`text-sm font-bold px-2 py-1 rounded border bg-white ${r.status==='保守'?'text-red-600':''}`}>{r.status}</span>
-                </div>
-                {r.status !== '保守' && (
-                  <div className="text-sm text-gray-700 grid grid-cols-2 gap-2 mt-2">
-                    <p>団体: {r.groupName}</p><p>代表者: {r.applicantName}</p><p>電話: {r.phone}</p><p>Email: {r.email}</p>
-                  </div>
-                )}
+                <div className="flex justify-between items-center mb-2"><span className="font-bold text-lg">{r.facility} <span className="text-gray-600 ml-2">({r.start} 〜 {r.end})</span></span><span className={`text-sm font-bold px-2 py-1 rounded border bg-white ${r.status==='保守'?'text-red-600':''}`}>{r.status}</span></div>
+                {r.status !== '保守' && (<div className="text-sm text-gray-700 grid grid-cols-2 gap-2 mt-2"><p>団体: {r.groupName}</p><p>代表者: {r.applicantName}</p><p>電話: {r.phone}</p><p>Email: {r.email}</p></div>)}
               </div>
             ))
           }
@@ -275,18 +262,55 @@ export default function App() {
     </div>
   );
 
+  // ★修正：朝・昼・夜の空き状況がわかるカレンダーUI
   const renderCalendar = () => {
     const year = currentMonth.getFullYear(); const month = currentMonth.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate(); const firstDay = new Date(year, month, 1).getDay(); const days = [];
-    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="p-2"></div>);
+    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="p-1"></div>);
+    
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dayReservations = reservations.filter(r => r.date === dateStr);
-      let statusIcon = '〇'; let statusColor = 'text-blue-500';
-      if (dayReservations.length >= 10) { statusIcon = '×'; statusColor = 'text-red-500'; } else if (dayReservations.length >= 5) { statusIcon = '△'; statusColor = 'text-yellow-500'; }
-      days.push(<button key={day} onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} className="p-2 border rounded hover:bg-blue-50 flex flex-col items-center"><span className="font-bold">{day}</span><span className={`text-lg ${statusColor}`}>{statusIcon}</span></button>);
+      
+      const slots = timeOptions.slice(0, -1);
+      let mFree = 0, aFree = 0, nFree = 0;
+      
+      // 朝(8:30~12:00), 昼(12:00~18:00), 夜(18:00~22:00) の空き枠を計算
+      slots.forEach(slot => {
+        const isBooked = dayReservations.some(r => r.start <= slot && slot < r.end);
+        if (!isBooked) {
+          if (slot < "12:00") mFree++;
+          else if (slot < "18:00") aFree++;
+          else nFree++;
+        }
+      });
+      const total = mFree + aFree + nFree;
+
+      let statusDisplay;
+      if (total === 0) {
+        statusDisplay = <span className="text-red-500 font-bold text-sm mt-3">満</span>;
+      } else if (total === slots.length) {
+        statusDisplay = <span className="text-blue-500 font-bold text-sm mt-3">〇 空き</span>;
+      } else {
+        // スマホでも崩れないように3行のバッジで表示
+        statusDisplay = (
+          <div className="flex flex-col items-center mt-1 space-y-0.5 text-[10px] font-bold">
+            <span className={mFree > 0 ? "text-blue-600" : "text-gray-400"}>朝 {mFree>0?'〇':'×'}</span>
+            <span className={aFree > 0 ? "text-blue-600" : "text-gray-400"}>昼 {aFree>0?'〇':'×'}</span>
+            <span className={nFree > 0 ? "text-blue-600" : "text-gray-400"}>夜 {nFree>0?'〇':'×'}</span>
+          </div>
+        );
+      }
+
+      days.push(
+        <button key={day} onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} 
+                className="p-1 border rounded hover:bg-blue-50 flex flex-col items-center h-20 justify-start bg-white shadow-sm transition-colors">
+          <span className="font-bold text-sm text-gray-700">{day}</span>
+          {statusDisplay}
+        </button>
+      );
     }
-    return <div className="grid grid-cols-7 gap-2 mb-4">{days}</div>;
+    return <div className="grid grid-cols-7 gap-1 mb-4">{days}</div>;
   };
 
   const selectedDayReservations = reservations.filter(r => r.date === reserveData.date);
@@ -309,8 +333,6 @@ export default function App() {
               <h2 className="text-xl font-bold mb-4">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '新規会員登録' : 'パスワードの再設定'}</h2>
               <form onSubmit={handleAuth} className="space-y-3">
                 <input required type="email" placeholder="メールアドレス" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, email: e.target.value})} />
-                
-                {/* ログインの時だけパスワード入力を表示 */}
                 {loginMode === 'login' && <input required type="password" placeholder="パスワード" className="w-full p-2 border rounded" onChange={e => setAuthForm({...authForm, password: e.target.value})} />}
                 
                 <button type="submit" className="w-full py-2 bg-blue-600 text-white font-bold rounded mt-2">{loginMode === 'login' ? 'ログイン' : loginMode === 'register' ? '登録用URLを送信' : '再設定メールを送信'}</button>
