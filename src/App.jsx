@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 // ★GASのURLをセットしてください
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKcG6_HuXUZ7Puzx0WltlCZVn1747ruKC-YVIKztvSLnBzr39SCkhoxnmJkF6c8eTa/exec'; 
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxiEcfZHClkcZxTCVEb_o-NTqimJPwTMxiKefg7vFv1av352Wo5YgixDLTQ-05u3jjT/exec'; 
 
 const timeOptions = (() => {
   const options = [];
@@ -16,7 +16,6 @@ const timeOptions = (() => {
   return options;
 })();
 
-// ★現在の日付文字列を取得（YYYY-MM-DD形式）
 const today = new Date();
 const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -37,6 +36,8 @@ export default function App() {
   
   const [viewMode, setViewMode] = useState('home'); 
   const [myReservations, setMyReservations] = useState([]);
+  
+  // ★管理者のデフォルト日付を当日に設定
   const [adminDate, setAdminDate] = useState(todayStr);
   const [adminData, setAdminData] = useState([]);
 
@@ -146,7 +147,6 @@ export default function App() {
     try {
       const data = await handleGasRequest({ action: urlParams.admin ? 'adminBlock' : 'reserve', ...reserveData, ...userData, frontendUrl: window.location.href.split('?')[0] });
       if (data.status === 'success') {
-        // ★ 即・本予約に変わったのでアラート文言を変更
         alert(urlParams.admin ? '保守枠をブロックしました。' : '予約が完了しました！\n確認メールを送信しました。');
         window.location.reload();
       } else { alert(`エラー: ${data.message}`); }
@@ -197,29 +197,62 @@ export default function App() {
     </div>
   );
 
-  if (viewMode === 'adminDash') return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-between py-10 px-4">
-      <div className="max-w-4xl mx-auto w-full bg-white rounded-xl shadow-md p-6">
-        <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <h1 className="text-xl font-bold text-red-600">【管理者】予約状況ダッシュボード</h1>
-          <button onClick={() => { setViewMode('home'); window.location.href = window.location.pathname; }} className="px-4 py-2 bg-gray-200 rounded text-sm">予約画面へ戻る</button>
-        </div>
-        <input type="date" value={adminDate} onChange={e => setAdminDate(e.target.value)} className="p-3 border rounded font-bold mb-6 text-lg" />
-        <div className="space-y-4">
-          {adminData.length === 0 ? <p className="text-gray-500">この日の予約・保守枠はありません。</p> : 
-            adminData.map((r, i) => (
-              <div key={i} className={`p-4 border rounded ${r.status === '予約' ? 'bg-blue-50 border-blue-200' : r.status === '保守' ? 'bg-red-50 border-red-200' : 'bg-gray-100'}`}>
-                <div className="flex justify-between items-center mb-2"><span className="font-bold text-lg">{r.facility} <span className="text-gray-600 ml-2">({r.start} 〜 {r.end})</span></span><span className={`text-sm font-bold px-2 py-1 rounded border bg-white ${r.status==='保守'?'text-red-600':''}`}>{r.status}</span></div>
-                {r.status !== '保守' && (<div className="text-sm text-gray-700 grid grid-cols-2 gap-2 mt-2"><p>団体: {r.groupName}</p><p>代表者: {r.applicantName}</p><p>電話: {r.phone}</p><p>Email: {r.email}</p></div>)}
+  // ★修正：管理者ダッシュボード（施設ごとに分けて表示）
+  if (viewMode === 'adminDash') {
+    const adminGrouped = facilities.reduce((acc, facility) => {
+      acc[facility] = adminData.filter(r => r.facility === facility);
+      return acc;
+    }, {});
+
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-between py-10 px-4">
+        <div className="max-w-4xl mx-auto w-full bg-white rounded-xl shadow-md p-6">
+          <div className="flex justify-between items-center border-b pb-4 mb-6">
+            <h1 className="text-xl font-bold text-red-600">【管理者】予約状況ダッシュボード</h1>
+            <button onClick={() => { setViewMode('home'); window.location.href = window.location.pathname; }} className="px-4 py-2 bg-gray-200 rounded text-sm">予約画面へ戻る</button>
+          </div>
+          <div className="mb-6 flex items-center space-x-4">
+            <input type="date" value={adminDate} onChange={e => setAdminDate(e.target.value)} className="p-3 border rounded font-bold text-lg" />
+            <span className="text-gray-600 font-bold">の予約状況</span>
+          </div>
+          
+          <div className="space-y-6">
+            {facilities.map(facility => (
+              <div key={facility} className="border rounded-lg p-4 bg-gray-50 shadow-sm">
+                <h2 className="font-bold text-lg mb-3 border-b-2 border-gray-200 pb-1 text-gray-800">{facility}</h2>
+                {adminGrouped[facility] && adminGrouped[facility].length > 0 ? (
+                  <div className="space-y-3">
+                    {adminGrouped[facility].map((r, i) => (
+                      <div key={i} className={`p-3 border rounded bg-white ${r.status === '保守' ? 'border-red-300' : 'border-blue-300'}`}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-md">{r.start} 〜 {r.end}</span>
+                          <span className={`text-xs font-bold px-2 py-1 rounded border ${r.status==='保守'?'text-red-600 bg-red-50':'text-blue-600 bg-blue-50'}`}>{r.status}</span>
+                        </div>
+                        {r.status !== '保守' && (
+                          <div className="text-sm text-gray-700 grid grid-cols-2 gap-x-2 gap-y-1 mt-2 bg-gray-50 p-2 rounded">
+                            <p><span className="text-gray-500 text-xs">団体:</span> {r.groupName}</p>
+                            <p><span className="text-gray-500 text-xs">代表:</span> {r.applicantName}</p>
+                            <p><span className="text-gray-500 text-xs">電話:</span> {r.phone}</p>
+                            <p><span className="text-gray-500 text-xs">Email:</span> {r.email}</p>
+                          </div>
+                        )}
+                        {r.status === '保守' && (
+                          <div className="text-sm text-gray-700 mt-2 bg-gray-50 p-2 rounded">管理者による保守ブロック</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 py-2">この施設の予約・保守枠はありません。</p>
+                )}
               </div>
-            ))
-          }
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  // マイページでの「過去予約の非表示」
   const futureReservations = myReservations.filter(r => r.date >= todayStr);
 
   if (viewMode === 'mypage') return (
@@ -257,11 +290,7 @@ export default function App() {
         </form>
         <div className="mt-8 pt-4 border-t text-right"><button onClick={()=>{localStorage.removeItem('sports_app_user'); setLoggedInUser(null); setViewMode('home');}} className="text-sm text-gray-500 underline">ログアウト</button></div>
       </div>
-      
-      {/* フッターリンク（管理者用） */}
-      <div className="text-center pb-4">
-        <a href="?admin=true" className="text-xs text-gray-400 underline hover:text-gray-600">【テスト用】管理者画面へ</a>
-      </div>
+      <div className="text-center pb-4"><a href="?admin=true" className="text-xs text-gray-400 underline hover:text-gray-600">【テスト用】管理者画面へ</a></div>
     </div>
   );
 
@@ -272,8 +301,6 @@ export default function App() {
     
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      
-      // ★ 過去日の判定
       const isPast = dateStr < todayStr;
       
       const dayReservations = reservations.filter(r => r.date === dateStr);
@@ -316,11 +343,8 @@ export default function App() {
         );
       }
 
-      // ★ 過去日はグレーアウトし、クリックを無効化する
       days.push(
-        <button key={day} 
-                disabled={isPast}
-                onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} 
+        <button key={day} disabled={isPast} onClick={() => { setReserveData({...reserveData, date: dateStr}); setStep(2); }} 
                 className={`p-1 border rounded flex flex-col items-center h-20 justify-start shadow-sm transition-colors ${isPast ? 'bg-gray-100 cursor-not-allowed' : 'bg-white hover:bg-blue-50'}`}>
           <span className={`font-bold text-sm ${isPast ? 'text-gray-400' : 'text-gray-700'}`}>{day}</span>
           {statusDisplay}
@@ -381,7 +405,12 @@ export default function App() {
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg mb-4">
               <p className="font-bold text-red-700 text-sm mb-2">【既に埋まっている時間帯】</p>
               {selectedDayReservations.length === 0 ? (<p className="text-sm text-gray-600">この日は終日空いています。</p>) : (
-                <ul className="list-disc list-inside text-sm text-gray-800 space-y-1">{selectedDayReservations.sort((a,b) => a.start > b.start ? 1 : -1).map((r, i) => (<li key={i}>{r.start} 〜 {r.end} <span className="text-xs text-red-500 ml-2">({r.status})</span></li>))}</ul>
+                <ul className="list-disc list-inside text-sm text-gray-800 space-y-1">
+                  {/* ★修正：既に予約されている時間帯に「団体名」を表示するように追加 */}
+                  {selectedDayReservations.sort((a,b) => a.start > b.start ? 1 : -1).map((r, i) => (
+                    <li key={i}>{r.start} 〜 {r.end} <span className="font-bold ml-2">{r.groupName}</span> <span className="text-xs text-red-500 ml-1">({r.status})</span></li>
+                  ))}
+                </ul>
               )}
             </div>
             <div className="flex items-center space-x-2"><select required className="w-1/2 p-3 border rounded" value={reserveData.startTime} onChange={e => setReserveData({...reserveData, startTime: e.target.value})}><option value="">開始時間</option>{timeOptions.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}</select><span>〜</span><select required className="w-1/2 p-3 border rounded" value={reserveData.endTime} onChange={e => setReserveData({...reserveData, endTime: e.target.value})}><option value="">終了時間</option>{timeOptions.slice(1).map(t => <option key={t} value={t}>{t}</option>)}</select></div>
